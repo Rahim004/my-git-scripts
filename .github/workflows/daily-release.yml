@@ -1,0 +1,107 @@
+name: Daily Automated Release
+
+on:
+  schedule:
+    # Запуск каждый день в 00:00 UTC
+    - cron: '0 0 * * *'
+  # Также можно запускать вручную
+  workflow_dispatch:
+    inputs:
+      version_suffix:
+        description: 'Суффикс версии (опционально)'
+        required: false
+        default: ''
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Полная история коммитов для changelog
+
+      - name: Generate version number
+        id: version
+        run: |
+          # Получаем текущую дату в UTC
+          MONTH=$(date -u +'%-m')
+          WEEK=$(date -u +'%-V')  # ISO номер недели (01-53)
+          WEEKDAY=$(date -u +'%u')  # День недели (1-7, понедельник=1)
+          
+          # Формируем версию
+          VERSION="v${MONTH}.${WEEK}.${WEEKDAY}"
+          
+          # Добавляем суффикс если задан при ручном запуске
+          if [ -n "${{ inputs.version_suffix }}" ]; then
+            VERSION="${VERSION}-${{ inputs.version_suffix }}"
+          fi
+          
+          echo "Generated version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Для отладки
+          echo "Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          echo "Month: $MONTH"
+          echo "Week: $WEEK"
+          echo "Weekday: $WEEKDAY"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Получаем дату вчерашнего дня для фильтрации коммитов
+          YESTERDAY=$(date -u -d 'yesterday' +'%Y-%m-%d')
+          TODAY=$(date -u +'%Y-%m-%d')
+          
+          echo "## 📅 Изменения за $YESTERDAY" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          
+          # Получаем коммиты за вчерашний день
+          # Используем git log с фильтрацией по дате
+          if git log --since="$YESTERDAY 00:00:00" --until="$TODAY 00:00:00" --oneline > /tmp/commits.txt; then
+            if [ -s /tmp/commits.txt ]; then
+              echo "### 🔨 Коммиты:" >> CHANGELOG.md
+              echo '```' >> CHANGELOG.md
+              cat /tmp/commits.txt >> CHANGELOG.md
+              echo '```' >> CHANGELOG.md
+              echo "" >> CHANGELOG.md
+            else
+              echo "### 📝 Нет новых коммитов" >> CHANGELOG.md
+              echo "" >> CHANGELOG.md
+            fi
+          fi
+          
+          # Добавляем информацию о workflow
+          echo "### 🤖 Информация о сборке" >> CHANGELOG.md
+          echo "- **Версия:** ${{ steps.version.outputs.version }}" >> CHANGELOG.md
+          echo "- **Дата сборки:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> CHANGELOG.md
+          echo "- **Workflow:** [${{ github.workflow }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> CHANGELOG.md
+          
+          # Показываем changelog для отладки
+          echo "Generated changelog:"
+          cat CHANGELOG.md
+
+      - name: Create Git tag
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a "${{ steps.version.outputs.version }}" -m "Daily release ${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "Daily Release ${{ steps.version.outputs.version }}"
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true  # GitHub сам сгенерирует дополнительные заметки
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify success
+        run: |
+          echo "✅ Релиз ${{ steps.version.outputs.version }} успешно создан!"
+          echo "📦 Скачать: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}"

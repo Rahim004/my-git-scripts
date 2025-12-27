@@ -8,6 +8,7 @@ if [ $# -eq 0 ]; then
 fi
 
 PROJECT_DIR="$1"
+command -v git >/dev/null 2>&1 || { echo "ОШИБКА: Git не установлен!"; exit 1; }
 
 # Проверяем, существует ли папка
 if [ ! -d "$PROJECT_DIR" ]; then
@@ -30,7 +31,7 @@ cd "$PROJECT_DIR"
 
 echo "🌳 ДЕРЕВО КОММИТОВ:"
 echo "=================="
-git log --oneline --graph --all --decorate --color=always | head -20
+git log --oneline --graph --all --decorate --color=always | head -n ${2:-20}
 
 echo ""
 echo "📌 ВЕТКИ:"

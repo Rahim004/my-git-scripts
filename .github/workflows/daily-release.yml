@@ -1,0 +1,58 @@
+name: Daily Release
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Каждый день в полночь (UTC)
+  workflow_dispatch:      # Можно запустить вручную
+
+jobs:
+  create-daily-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Шаг 1: Получить код репозитория
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      # Шаг 2: Создать номер версии
+      - name: Create version number
+        id: version
+        run: |
+          # Получаем текущую дату
+          MONTH=$(date +'%-m')      # Номер месяца (1-12)
+          WEEK=$(date +'%-V')       # Номер недели года (1-53)
+          DAY=$(date +'%u')         # День недели (1-7, понедельник=1)
+          
+          # Формируем версию
+          VERSION="v$MONTH.$WEEK.$DAY"
+          
+          # Сохраняем для использования в других шагах
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Выводим для информации
+          echo "📅 Дата: $(date)"
+          echo "🚀 Версия: $VERSION"
+      
+      # Шаг 3: Создать релиз на GitHub
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "Daily Release ${{ steps.version.outputs.version }}"
+          body: |
+            ## 🗓️ Автоматический релиз от $(date -u +'%Y-%m-%d')
+            
+            ### 📊 Информация:
+            - **Версия:** ${{ steps.version.outputs.version }}
+            - **Дата:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+            - **Месяц:** ${{ steps.version.outputs.MONTH }}
+            - **Неделя года:** ${{ steps.version.outputs.WEEK }}
+            - **День недели:** ${{ steps.version.outputs.DAY }}
+            
+            ### 📝 Что изменилось:
+            Автоматически сгенерированный ежедневный релиз.
+            
+            ---
+            *Создано GitHub Actions*
+          draft: false
+          prerelease: false
